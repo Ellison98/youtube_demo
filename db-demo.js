@@ -7,14 +7,17 @@ const connection = await mysql.createConnection({
     user: 'root',
     password: 'root',
     database: 'YouTube',
-    dateStrings: true,
+    dateStrings: true
 });
 
 // Simple SELECT query
 try {
     const [results, fields] = await connection.query('SELECT * FROM users');
-    console.log(results); // results contains rows returned by server
-    console.log(fields); // fields contains extra meta data about results, if available
+    var { id, email, name, create_at } = results[0];
+    console.log(id);
+    console.log(email);
+    console.log(name);
+    console.log(create_at);
 } catch (err) {
     console.error(err);
 }
