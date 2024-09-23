@@ -1,10 +1,11 @@
-const express = require('express');
+const express = require("express");
 const app = express();
+
 app.listen(7777);
-app.use(express.json());
 
-const usersRouter = require('./routes/users');
-const channelsRouter = require('./routes/channels');
+// 미들웨어
+const userRouter = require("./routes/users"); // user-demo 소환
+const channelRouter = require("./routes/channels"); // channel-demo 소환
 
-app.use('/', usersRouter);
-app.use('/channels/', channelsRouter);
+app.use("/", userRouter);
+app.use("/channels", channelRouter);

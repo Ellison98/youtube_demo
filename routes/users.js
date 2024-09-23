@@ -1,112 +1,135 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const conn = require('../mariadb');
+const conn = require("../mariadb");
+const { body, param, validationResult } = require("express-validator");
 
-const users = [];
+// jwt 모듈
+const jwt = require("jsonwebtoken");
 
-// idCheck
-const idCheck = (obj, userId) => {
-	let loginUser = {};
-	obj.map((user, idx) => {
-		if (user.userId === userId) {
-			loginUser = { ...user, idx };
-		}
-	});
-	return loginUser;
+// dotenv 모듈
+const dotenv = require("dotenv");
+dotenv.config();
+
+router.use(express.json());
+
+const validate = (req, res, next) => {
+  const err = validationResult(req);
+
+  if (err.isEmpty()) {
+    return next();
+  } else {
+    return res.status(400).json(err.array());
+  }
 };
 
-// pwdCheck
-const pwdCheck = (obj, userPw, res) => {
-	if (obj.userPw === userPw) {
-		res.status(200).json({
-			message: `${obj.userId}님 환영합니다.`,
-		});
-	} else {
-		res.status(400).json({
-			message: `pw아이디나 비밀번호를 다시 확인해주세요.`,
-		});
-	}
-};
+router.post(
+  "/login",
+  [
+    body("email").notEmpty().isEmail().withMessage("이메일 확인 필요"),
+    body("password").notEmpty().isString().withMessage("비밀번호 확인 필요"),
+    validate,
+  ],
+  function (req, res) {
+    const { email, password } = req.body;
 
-// 로그인
-router.post('/login', (req, res) => {
-	const { userId, userPw } = req.body;
-	const loginUser = idCheck(users, userId);
-	const userCheck = Object.keys(loginUser);
+    let sql = `SELECT * FROM users WHERE email = ?`;
+    conn.query(sql, email, function (err, results) {
+      if (err) {
+        console.log(err);
+        return res.status(400).end();
+      }
 
-	if (userCheck.length > 0) {
-		pwdCheck(loginUser, userPw, res);
-	} else {
-		res.status(400).json({
-			message: `id아이디나 비밀번호를 다시 확인해주세요.`,
-		});
-	}
-});
+      const loginUser = results[0];
 
-// 회원가입
-router.post('/join', (req, res) => {
-	const { userId } = req.body;
-	const bodyData = req.body;
-	const key = users.filter((user) => user.userId === userId);
-	const bodyKeyCheck = Object.keys(req.body).length;
+      if (loginUser && loginUser.password == password) {
+        // token 발급
+        const token = jwt.sign(
+          { email: loginUser.email, name: loginUser.name },
+          process.env.PRIVATE_KEY,
+          { expiresIn: "30m", issuer: "hyunhee" }
+        );
 
-	if (bodyKeyCheck > 0) {
-		if (key.length === 0) {
-			users.push(bodyData);
-			res.status(201).json({
-				message: `${userId}님 가입을 환영합니다.`,
-			});
-		} else {
-			res.status(409).json({
-				message: `이미 존재하는 아이디입니다.`,
-			});
-		}
-	} else {
-		res.status(400).json({
-			message: `입력 값을 다시 확인해주세요.`,
-		});
-	}
-});
+        res.cookie("token", token, { httpOnly: true });
+
+        res.status(200).json({
+          message: `${loginUser.name}님 로그인 되었습니다.`,
+          token: token,
+        });
+      } else {
+        res.status(404).json({ message: `이메일 또는 비밀번호가 틀렸습니다.` });
+      }
+    });
+  }
+);
+
+router.post(
+  "/join",
+  [
+    body("email").notEmpty().isEmail().withMessage("이메일 확인 필요"),
+    body("name").notEmpty().isString().withMessage("이름 확인 필요"),
+    body("password").notEmpty().isString().withMessage("비밀번호 확인 필요"),
+    body("contact").notEmpty().isString().withMessage("연락처 확인 필요"),
+    validate,
+  ],
+  function (req, res) {
+    const { email, name, password, contact } = req.body;
+
+    let sql = `INSERT INTO users (email, name, password, contact) VALUES (?, ?, ?, ?)`;
+    let values = [email, name, password, contact];
+    conn.query(sql, values, function (err, results) {
+      if (err) {
+        console.log(err);
+        return res.status(400).end();
+      }
+
+      return res.status(201).json(results);
+    });
+  }
+);
 
 router
-	.route('/users')
-	// 회원개별조회
-	.get((req, res) => {
-		const { userId } = req.body;
+  .route("/users")
+  .get(
+    [
+      body("email").notEmpty().isEmail().withMessage("이메일 확인 필요"),
+      validate,
+    ],
+    function (req, res) {
+      let { email } = req.body;
 
-		if (users.length === 0) {
-			res.status(500).json({
-				message: `회원이 존재하지 않습니다.`,
-			});
-			return;
-		}
-		const loginUser = idCheck(users, userId);
-		const userCheck = Object.keys(loginUser);
+      let sql = `SELECT * FROM users WHERE email = ?`;
+      conn.query(sql, email, function (err, results) {
+        if (err) {
+          console.log(err);
+          return res.status(400).end();
+        }
 
-		if (userCheck.length > 0) {
-			res.status(200).json({ userId: loginUser.userId, name: loginUser.name });
-		} else {
-			res.status(404).json({
-				message: `존재하지 않는 계정입니다.`,
-			});
-		}
-	})
-	// 회원개별탈퇴
-	.delete((req, res) => {
-		const { userId } = req.body;
-		const loginUser = idCheck(users, userId);
-		const userCheck = Object.keys(loginUser);
+        return res.status(200).json(results);
+      });
+    }
+  )
+  .delete(
+    [
+      body("email").notEmpty().isEmail().withMessage("이메일 확인 필요"),
+      validate,
+    ],
+    function (req, res) {
+      let { email } = req.body;
 
-		if (userCheck.length > 0) {
-			users.splice(loginUser.idx, 1);
-			res.status(200).json({
-				message: `${userId}님의 계정이 탈퇴되었습니다.`,
-			});
-		} else {
-			res.status(404).json({
-				message: `존재하지 않는 계정입니다.`,
-			});
-		}
-	});
+      let sql = `DELETE FROM users WHERE email = ?`;
+      conn.query(sql, email, function (err, results) {
+        if (err) {
+          console.log(err);
+          return res.status(400).end();
+        }
+
+        if (results.affectedRows == 0) {
+          return res.status(400).end();
+        } else {
+          res.status(200).json(results);
+        }
+      });
+    }
+  );
 
 module.exports = router;

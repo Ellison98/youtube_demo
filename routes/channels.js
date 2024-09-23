@@ -1,136 +1,135 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
+const conn = require("../mariadb");
+const { body, param, validationResult } = require("express-validator");
 
-const users = [];
+router.use(express.json());
 
-// obj length check
-const isExist = (obj) => {
-	const objLength = Object.keys(obj).length;
-	if (objLength > 0) {
-		return true;
-	} else {
-		return false;
-	}
-};
+const validate = (req, res, next) => {
+  const err = validationResult(req);
 
-// userCheck
-const idCheck = (obj, userId, channelTitle) => {
-	let userSearch = {};
-	obj.map((user, idx) => {
-		channelTitle && user.channelTitle === channelTitle
-			? (userSearch = false)
-			: '';
-		if (user.channelTitle === userId) {
-			return (userSearch = { idx, ...user });
-		}
-	});
-	return userSearch;
+  if (err.isEmpty()) {
+    return next();
+  } else {
+    return res.status(400).json(err.array());
+  }
 };
 
 router
-	.route('/')
-	// 채널생성
-	.post((req, res) => {
-		const { channelTitle } = req.body;
-		const bodyData = req.body;
+  .route("/")
+  .get(
+    [body("userId").notEmpty().isInt().withMessage("숫자 입력 필요"), validate],
+    (req, res) => {
+      const { userId } = req.body;
 
-		const key = users.filter((user) => user.channelTitle === channelTitle);
-		if (isExist(req.body)) {
-			if (key.length > 0) {
-				res.status(409).json({
-					message: `${channelTitle}은 이미 있는 채널명입니다.`,
-				});
-			} else {
-				users.push(bodyData);
-				res.status(201).json({
-					message: `${channelTitle}님 채널을 응원합니다.`,
-				});
-			}
-		} else {
-			res.status(404).json({
-				message: `채널명을 올바르게 입력하세요.`,
-			});
-		}
-	})
-	// 채널전체조회
-	.get((req, res) => {
-		const { userId } = req.body;
-		if (!userId) {
-			res.status(404).json({
-				message: `아이디로 조회가 가능합니다.`,
-			});
-			return;
-		}
-		let usersCheck = {};
-		users.map((user, idx) => {
-			if (user.userId === userId) {
-				usersCheck[idx] = { ...user };
-			}
-		});
-		const usersLength = Object.keys(usersCheck).length;
-		if (usersLength > 0) {
-			res.status(200).json(usersCheck);
-		} else {
-			res.status(404).json({
-				message: `조회할 채널이 없습니다.`,
-			});
-		}
-	});
+      let sql = `SELECT * FROM channel WHERE user_id = ?`;
+
+      conn.query(sql, userId, function (err, results) {
+        if (err) {
+          console.log(err);
+          return res.status(400).end();
+        }
+
+        if (results.length) {
+          return res.status(200).json(results);
+        } else {
+          res.status(404).json({ message: "채널 정보를 찾을 수 없습니다." });
+        }
+      });
+    }
+  )
+  .post(
+    [
+      body("userId").notEmpty().isInt().withMessage("숫자 입력 필요"),
+      body("name").notEmpty().isString().withMessage("문자 입력 필요"),
+      validate,
+    ],
+    (req, res) => {
+      const { name, userId } = req.body;
+
+      let sql = `INSERT INTO channel (name, user_id) VALUES (?, ?)`;
+      let values = [name, userId];
+      conn.query(sql, values, function (err, results) {
+        if (err) {
+          console.log(err);
+          return res.status(400).end();
+        }
+        res.status(201).json(results);
+      });
+    }
+  );
 
 router
-	.route('/:id')
-	// 채널개별수정
-	.put((req, res) => {
-		const { id: userId } = req.params;
-		const { channelTitle } = req.body;
-		const userCheck = idCheck(users, userId, channelTitle);
-		const userCheckLength = Object.keys(userCheck).length;
+  .route("/:id")
+  .get(
+    [param("id").notEmpty().withMessage("숫자 입력 필요"), validate],
+    (req, res) => {
+      let { id } = req.params;
+      id = parseInt(id);
 
-		if (userCheckLength > 0) {
-			users[userCheck.idx].channelTitle = channelTitle;
-			res.status(200).json({
-				message: `${userId}님의 채널명이 ${channelTitle}로 성공적으로 수정되었습니다.`,
-			});
-		} else if (userCheck === false) {
-			res.status(404).json({
-				message: `${channelTitle}는 이미 있는 채널명입니다.`,
-			});
-		} else {
-			res.status(404).json({
-				message: `${userId}는 없는 채널명입니다.`,
-			});
-		}
-	})
-	// 채널개별삭제
-	.delete((req, res) => {
-		const { id: userId } = req.params;
-		const userCheck = idCheck(users, userId);
-		const userCheckLength = Object.keys(userCheck).length;
+      let sql = `SELECT * FROM channel WHERE id = ?`;
+      conn.query(sql, id, function (err, results) {
+        if (err) {
+          console.log(err);
+          return res.status(400).end();
+        }
 
-		if (userCheckLength > 0) {
-			users.splice(userCheck.idx, 1);
-			res.status(200).json({
-				message: `${userId}님의 채널이 삭제되었습니다.`,
-			});
-		} else {
-			res.status(404).json({
-				message: `${userId}님의 채널이 존재하지않습니다.`,
-			});
-		}
-	})
-	// 채널개별조회
-	.get((req, res) => {
-		const { id: userId } = req.params;
-		const userCheck = idCheck(users, userId);
-		const userCheckLength = Object.keys(userCheck).length;
+        if (results.length) {
+          res.status(200).json(results);
+        } else {
+          res.status(404).json({ message: "채널 정보를 찾을 수 없습니다." });
+        }
+      });
+    }
+  )
+  .put(
+    [
+      param("id").notEmpty().withMessage("숫자 입력 필요"),
+      body("name").notEmpty().isString().withMessage("채널명 오류"),
+      validate,
+    ],
+    (req, res) => {
+      let { id } = req.params;
+      id = parseInt(id);
+      let { name } = req.body;
 
-		if (userCheckLength > 0) {
-			res.status(200).json(userCheck);
-		} else {
-			res.status(400).json({
-				message: `${userId}는 존재하지 않는 채널입니다.`,
-			});
-		}
-	});
+      let sql = `UPDATE channel SET name=? WHERE id=?`;
+      let values = [name, id];
+      conn.query(sql, values, function (err, results) {
+        if (err) {
+          console.log(err);
+          return res.status(400).end();
+        }
+
+        if (results.affectedRows == 0) {
+          return res.status(400).end();
+        } else {
+          res.status(200).json(results);
+        }
+      });
+    }
+  )
+
+  .delete(
+    [param("id").notEmpty().withMessage("숫자 입력 필요"), validate],
+    (req, res) => {
+      let { id } = req.params;
+      id = parseInt(id);
+
+      let sql = `DELETE FROM channel WHERE id = ?`;
+      conn.query(sql, id, function (err, results) {
+        if (err) {
+          console.log(err);
+          return res.status(400).end();
+        }
+
+        if (results.affectedRows == 0) {
+          return res.status(400).end();
+        } else {
+          res.status(200).json(results);
+        }
+      });
+    }
+  );
 
 module.exports = router;
